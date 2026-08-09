@@ -60,7 +60,20 @@ do_format() {
         exit 1
     fi
 
-    echo "размонтирую разделы $dev..."
+    # Android монтирует съёмные тома через vold под алиасом /dev/block/vold/public:MAJOR,MINOR,
+    # а не по прямому пути /dev/block/sdXN - обычный umount по прямому пути ничего не находит,
+    # том остаётся занят, из-за чего и BLKRRPART, и последующий mkfs падают с "Device or
+    # resource busy". Отпускать нужно через vold же (sm unmount), а не голым umount.
+    part="${node}1"
+    if [ -e "/sys/class/block/${dev}1/dev" ]; then
+        majmin=$(cat "/sys/class/block/${dev}1/dev" 2>/dev/null | tr ':' ',')
+        if [ -n "$majmin" ]; then
+            echo "размонтирую public:$majmin через vold..."
+            sm unmount "public:$majmin" >>$LOG 2>&1
+            sleep 1
+        fi
+    fi
+    # на всякий случай - если том смонтирован не через vold (не должно быть, но не помешает)
     for p in ${node}*; do
         [ "$p" = "$node" ] && continue
         mp=$(mount | grep "^$p " | awk '{print $3}')
@@ -73,7 +86,6 @@ do_format() {
     sleep 1
     blockdev --rereadpt "$node" 2>/dev/null
 
-    part="${node}1"
     i=0
     while [ ! -b "$part" ] && [ $i -lt 5 ]; do
         sleep 1
