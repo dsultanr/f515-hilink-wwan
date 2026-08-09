@@ -1,7 +1,9 @@
 package su.dsr.modemguide;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -14,14 +16,17 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 /**
- * Manual control screen: the modem/network-priority script runs only when the user presses
- * "Run now", never automatically on boot or in the background. "Log" / "Status" just read
- * back what happened, so every action taken on the device is visible here.
+ * modem-up.sh does all the real work (idempotent, self-checking with --check) - this
+ * screen just deploys it and runs it. Nothing runs automatically: only on button press.
  */
 public class MainActivity extends Activity {
 
+    private static final String SPEEDTEST_URL = "https://internet.yandex.ru";
+
     private TextView log;
+    private LinearLayout buttonsRow;
     private final Handler ui = new Handler(Looper.getMainLooper());
+    private boolean busy = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -30,6 +35,7 @@ public class MainActivity extends Activity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(24, 24, 24, 24);
+        root.setBackgroundColor(Color.BLACK);
 
         TextView version = new TextView(this);
         version.setText("ModemGuide " + versionName());
@@ -37,44 +43,15 @@ public class MainActivity extends Activity {
         version.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         root.addView(version);
 
-        LinearLayout buttons = new LinearLayout(this);
-        buttons.setOrientation(LinearLayout.HORIZONTAL);
-        buttons.addView(button("Run now", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                append("running...");
-                background(new Runnable() {
-                    @Override
-                    public void run() {
-                        final String out = Keeper.run(MainActivity.this);
-                        post(out);
-                    }
-                });
-            }
-        }));
-        buttons.addView(button("Log", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                background(new Runnable() {
-                    @Override
-                    public void run() {
-                        post(Keeper.readLog(MainActivity.this, 40));
-                    }
-                });
-            }
-        }));
-        buttons.addView(button("Status", new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                background(new Runnable() {
-                    @Override
-                    public void run() {
-                        post(Keeper.status(MainActivity.this));
-                    }
-                });
-            }
-        }));
-        root.addView(buttons);
+        buttonsRow = new LinearLayout(this);
+        buttonsRow.setOrientation(LinearLayout.HORIZONTAL);
+        addRunButton("Проверка", "--check");
+        addRunButton("Включить", "");
+        addUrlButton("Интернетометр", SPEEDTEST_URL);
+        ScrollView buttonsScroll = new ScrollView(this);
+        buttonsScroll.setHorizontalScrollBarEnabled(false);
+        buttonsScroll.addView(buttonsRow);
+        root.addView(buttonsScroll);
 
         log = new TextView(this);
         log.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
@@ -84,12 +61,64 @@ public class MainActivity extends Activity {
         ScrollView sv = new ScrollView(this);
         sv.addView(log);
         root.addView(sv);
-        root.setBackgroundColor(Color.BLACK);
 
         setContentView(root);
 
         append("ready. adbd target " + Keeper.ADB_HOST + ":" + Keeper.ADB_PORT);
-        append("manual mode: nothing runs until you press Run now.");
+        append("ничего не запускается само - только по кнопке.");
+        append("");
+        append("Проверка      - только диагностика, ничего не меняет");
+        append("Включить      - поднять USB-модем как WAN и починить DNS фантомной сети");
+        append("Интернетометр - открыть " + SPEEDTEST_URL + " (проверка интернета глазами)");
+    }
+
+    private void addRunButton(String text, final String args) {
+        buttonsRow.addView(button(text, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (busy) return;
+                setBusy(true);
+                append("");
+                append("> " + text + " ...");
+                background(new Runnable() {
+                    @Override
+                    public void run() {
+                        final String out = Keeper.run(MainActivity.this, args);
+                        post(out);
+                        ui.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                setBusy(false);
+                            }
+                        });
+                    }
+                });
+            }
+        }));
+    }
+
+    /**
+     * Открывает URL системным обработчиком ACTION_VIEW - на этой прошивке уже есть
+     * готовый webview-просмотрщик, поднимать второй смысла нет.
+     */
+    private void addUrlButton(String text, final String url) {
+        buttonsRow.addView(button(text, new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                } catch (Exception e) {
+                    append("не удалось открыть " + url + ": " + e);
+                }
+            }
+        }));
+    }
+
+    private void setBusy(boolean b) {
+        busy = b;
+        for (int i = 0; i < buttonsRow.getChildCount(); i++) {
+            buttonsRow.getChildAt(i).setEnabled(!b);
+        }
     }
 
     private String versionName() {
@@ -106,7 +135,7 @@ public class MainActivity extends Activity {
         b.setOnClickListener(l);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, 0, dp(16), 0);
+        lp.setMargins(0, 0, dp(12), 0);
         b.setLayoutParams(lp);
         return b;
     }
@@ -116,7 +145,7 @@ public class MainActivity extends Activity {
     }
 
     private void background(Runnable r) {
-        new Thread(r, "ui-work").start();
+        new Thread(r, "modemguide-work").start();
     }
 
     private void post(final String text) {

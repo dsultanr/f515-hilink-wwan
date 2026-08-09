@@ -14,14 +14,13 @@ public class Keeper {
 
     static final String TMP = "/data/local/tmp";
     static final String SCRIPT = TMP + "/modem-up.sh";
-    static final String LOG = TMP + "/modemguide.log";
     static final String ADB_HOST = "127.0.0.1";
     static final int ADB_PORT = 5555;
 
     private static final Object LOCK = new Object();
 
-    /** Deploys modem-up.sh and runs it, returning its combined output. */
-    public static String run(Context ctx) {
+    /** Deploys modem-up.sh and runs it with the given arguments (e.g. "--check"). */
+    public static String run(Context ctx, String args) {
         synchronized (LOCK) {
             StringBuilder sb = new StringBuilder();
             AdbClient adb = null;
@@ -35,47 +34,15 @@ public class Keeper {
 
                 deployScript(ctx, adb, sb);
 
-                sb.append("--- running modem-up.sh ---\n");
-                sb.append(adb.shell("sh " + SCRIPT + " 2>&1"));
+                String cmd = "sh " + SCRIPT + " " + args + " 2>&1";
+                sb.append("--- ").append(cmd).append(" ---\n");
+                sb.append(adb.shell(cmd));
             } catch (Exception e) {
                 sb.append("failed: ").append(e).append('\n');
             } finally {
                 if (adb != null) adb.close();
             }
             return sb.toString();
-        }
-    }
-
-    /** Reads the on-device log back (accumulates across runs). */
-    public static String readLog(Context ctx, int tailLines) {
-        AdbClient adb = null;
-        try {
-            adb = connect(ctx, 15000);
-            return adb.shell("tail -n " + tailLines + " " + LOG + " 2>&1");
-        } catch (Exception e) {
-            return "read failed: " + e;
-        } finally {
-            if (adb != null) adb.close();
-        }
-    }
-
-    /** Current network state, independent of running the script. */
-    public static String status(Context ctx) {
-        AdbClient adb = null;
-        try {
-            adb = connect(ctx, 15000);
-            StringBuilder sb = new StringBuilder();
-            sb.append("--- ip ---\n").append(adb.shell("ip -4 addr show eth1 2>&1")).append('\n');
-            sb.append("--- route ---\n").append(adb.shell("ip route get 8.8.8.8 2>&1")).append('\n');
-            sb.append("--- active default network ---\n")
-                    .append(adb.shell("dumpsys connectivity 2>/dev/null | grep -A1 '^Active default network'"))
-                    .append('\n');
-            sb.append("--- dns ---\n").append(adb.shell("nslookup ya.ru 2>&1")).append('\n');
-            return sb.toString();
-        } catch (Exception e) {
-            return "status failed: " + e;
-        } finally {
-            if (adb != null) adb.close();
         }
     }
 

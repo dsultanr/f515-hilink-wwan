@@ -2,6 +2,9 @@
 # Brings up the USB modem (ZTE MF833R, cdc_ether) as WAN and fixes the phantom-TBOX DNS so
 # Android (and apps/NTP) actually treat it as internet. No WireGuard, no daemon - one shot,
 # idempotent, safe to run again. Runs as root (adbd on this build already is root).
+#
+#   modem-up.sh          подъём (меняет состояние по необходимости)
+#   modem-up.sh --check  только диагностика, ничего не меняет
 TMP=/data/local/tmp
 LOG=$TMP/modemguide.log
 MODEM_MAC=34:4b:50:00:00:00
@@ -10,6 +13,9 @@ FALLBACK_ADDR=192.168.0.178
 FALLBACK_GW=192.168.0.1
 FALLBACK_TBOX_IF=vlan72
 FALLBACK_TBOX_DNS=192.168.72.1
+
+CHECK_ONLY=0
+[ "$1" = "--check" ] && CHECK_ONLY=1
 
 log() { echo "$(date '+%F %T') modem-up: $*" >> $LOG; }
 
@@ -30,25 +36,29 @@ log "using interface $IF"
 
 # --- WAN -------------------------------------------------------------------
 if ! ip -4 addr show "$IF" | grep -q 'inet '; then
-    ip link set "$IF" up
-    i=0
-    while [ $i -lt 30 ]; do
-        [ "$(cat /sys/class/net/$IF/carrier 2>/dev/null)" = "1" ] && break
-        sleep 1
-        i=$((i + 1))
-    done
+    if [ "$CHECK_ONLY" = 1 ]; then
+        echo "[dry] $IF: адреса нет, был бы поднят (up + udhcpc)"
+    else
+        ip link set "$IF" up
+        i=0
+        while [ $i -lt 30 ]; do
+            [ "$(cat /sys/class/net/$IF/carrier 2>/dev/null)" = "1" ] && break
+            sleep 1
+            i=$((i + 1))
+        done
 
-    # HiLink modem does its own NAT+DHCP. udhcpc gets the lease but does not apply it here
-    # (no default script), so parse and configure by hand.
-    LEASE=$(busybox udhcpc -i "$IF" -q -n -f 2>&1)
-    ADDR=$(echo "$LEASE" | sed -n 's/.*lease of \([0-9.]*\) obtained from \([0-9.]*\).*/\1/p' | tail -1)
-    GW=$(echo "$LEASE" | sed -n 's/.*lease of \([0-9.]*\) obtained from \([0-9.]*\).*/\2/p' | tail -1)
-    [ -n "$ADDR" ] || ADDR=$FALLBACK_ADDR
-    [ -n "$GW" ] || GW=$FALLBACK_GW
+        # HiLink modem does its own NAT+DHCP. udhcpc gets the lease but does not apply it
+        # here (no default script), so parse and configure by hand.
+        LEASE=$(busybox udhcpc -i "$IF" -q -n -f 2>&1)
+        ADDR=$(echo "$LEASE" | sed -n 's/.*lease of \([0-9.]*\) obtained from \([0-9.]*\).*/\1/p' | tail -1)
+        GW=$(echo "$LEASE" | sed -n 's/.*lease of \([0-9.]*\) obtained from \([0-9.]*\).*/\2/p' | tail -1)
+        [ -n "$ADDR" ] || ADDR=$FALLBACK_ADDR
+        [ -n "$GW" ] || GW=$FALLBACK_GW
 
-    ip addr replace "$ADDR/24" dev "$IF"
-    ip route replace default via "$GW" dev "$IF" metric 10
-    log "$IF up: $ADDR via $GW"
+        ip addr replace "$ADDR/24" dev "$IF"
+        ip route replace default via "$GW" dev "$IF" metric 10
+        log "$IF up: $ADDR via $GW"
+    fi
 else
     log "$IF already has an address"
 fi
@@ -92,6 +102,11 @@ ensure_tbox_dns() {
 
     OLD=$(iptables -w 10 -t nat -S OUTPUT 2>/dev/null | grep "$TBOX_DNS" | grep -v "to-destination $GW:53")
     [ -n "$OLD" ] && log "WARNING: stale tbox dns rule(s) present, remove by hand: $OLD"
+
+    if [ "$CHECK_ONLY" = 1 ]; then
+        echo "[dry] DNAT $TBOX_DNS:53 -> $GW:53, MASQUERADE $TBOX_SRC через $IF"
+        return
+    fi
 
     for proto in udp tcp; do
         iptables -w 10 -t nat -C OUTPUT -d $TBOX_DNS -p $proto --dport 53 \
