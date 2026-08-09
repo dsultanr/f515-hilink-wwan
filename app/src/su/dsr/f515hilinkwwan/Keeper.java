@@ -1,4 +1,4 @@
-package su.dsr.modemguide;
+package su.dsr.f515hilinkwwan;
 
 import android.content.Context;
 

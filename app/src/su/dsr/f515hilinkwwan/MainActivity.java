@@ -1,4 +1,4 @@
-package su.dsr.modemguide;
+package su.dsr.f515hilinkwwan;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -38,7 +38,7 @@ public class MainActivity extends Activity {
         root.setBackgroundColor(Color.BLACK);
 
         TextView version = new TextView(this);
-        version.setText("ModemGuide " + versionName());
+        version.setText("F515 HiLink WWAN " + versionName());
         version.setTextColor(Color.GRAY);
         version.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         root.addView(version);
@@ -145,7 +145,7 @@ public class MainActivity extends Activity {
     }
 
     private void background(Runnable r) {
-        new Thread(r, "modemguide-work").start();
+        new Thread(r, "f515hilinkwwan-work").start();
     }
 
     private void post(final String text) {

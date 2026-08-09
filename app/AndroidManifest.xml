@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="su.dsr.modemguide"
-    android:versionCode="2"
-    android:versionName="1.1">
+    package="su.dsr.f515hilinkwwan"
+    android:versionCode="3"
+    android:versionName="1.2">
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="29" />
 
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
-        android:label="ModemGuide"
+        android:label="F515 HiLink WWAN"
         android:icon="@mipmap/ic_launcher"
         android:directBootAware="true"
         android:allowBackup="false">
 
         <activity
             android:name=".MainActivity"
-            android:label="ModemGuide"
+            android:label="F515 HiLink WWAN"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

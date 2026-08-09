@@ -1,12 +1,13 @@
-# ModemGuide — подъём USB-модема + приоритет сети (без туннеля)
+# F515 HiLink WWAN — приложение
 
 Отдельное приложение «на полке», реализующее `~/f515/MODEM_ADB_GUIDE.md` в виде кнопки:
 поднимает USB-модем (ZTE MF833R, `eth1`) как WAN и чинит DNS фантомной TBOX-сети, чтобы
 Android и приложения реально считали интернет доступным. Без WireGuard, без демона —
 один прогон скрипта по кнопке, идемпотентно.
 
-Пакет `su.dsr.modemguide`, отдельный от `netkeeper` (`su.dsr.keeper`) — независимый проект,
-можно ставить/не ставить/удалять вне зависимости от него.
+Пакет `su.dsr.f515hilinkwwan`, отдельный от `netkeeper` (`su.dsr.keeper`) и от
+`f515-huawei-wwan` (`su.dsr.f515wwan`) — независимый проект, можно ставить/не
+ставить/удалять вне зависимости от них.
 
 ## UI
 
@@ -47,14 +48,14 @@ python3 mkadbpub.py assets/adbkey "you@host" > assets/adbkey.pub   # см. netke
 | `assets/modem-up.sh` | сам скрипт: WAN на eth1 + фикс DNS фантомной TBOX-сети, идемпотентен, поддерживает `--check` |
 | `assets/adbkey`, `assets/adbkey.pub` | ключ хоста для self-adb |
 | `res/mipmap-*/ic_launcher.png` | иконка приложения (сигнальные полоски, бирюзовая) |
-| `src/su/dsr/modemguide/AdbClient.java` | минимальный ADB-клиент |
-| `src/su/dsr/modemguide/Keeper.java` | раскладка скрипта, запуск с аргументами |
-| `src/su/dsr/modemguide/MainActivity.java` | экран: Проверка / Включить / Интернетометр |
+| `src/su/dsr/f515hilinkwwan/AdbClient.java` | минимальный ADB-клиент |
+| `src/su/dsr/f515hilinkwwan/Keeper.java` | раскладка скрипта, запуск с аргументами |
+| `src/su/dsr/f515hilinkwwan/MainActivity.java` | экран: Проверка / Включить / Интернетометр |
 
 ## Сборка
 
 ```bash
-./build.sh          # -> ModemGuide.apk
+./build.sh          # -> F515HilinkWwanApp.apk
 ```
 Тот же SDK, что у netkeeper (`/home/dsultanr/android-sdk`), тот же pipeline без gradle:
 aapt2 → javac → d8 → zipalign → apksigner (своя `keystore.jks`, создаётся при первой сборке).
@@ -62,8 +63,11 @@ aapt2 → javac → d8 → zipalign → apksigner (своя `keystore.jks`, со
 ## Установка
 
 Не устанавливалось на устройство (по аналогии с netkeeper — решение ставить или нет
-принимает пользователь). `ModemGuide.apk` собран и лежит рядом. Способ установки такой же,
-как обсуждался для netkeeper: либо через USB-флешку вручную, либо EngMode-инъекция.
+принимает пользователь). `F515HilinkWwanApp.apk` собран и лежит рядом. `pm install`/
+`adb install` на этой прошивке отключены политикой (`ro.build.type=user`), поэтому способ
+установки такой же, как обсуждался для netkeeper: через USB-флешку и штатный установщик
+Toolbox на голове (не просто копирование файла — установка идёт через приложение Toolbox),
+либо через EngMode-инъекцию.
 
 ## Ограничения
 

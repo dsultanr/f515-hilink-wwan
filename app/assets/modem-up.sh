@@ -6,7 +6,7 @@
 #   modem-up.sh          подъём (меняет состояние по необходимости)
 #   modem-up.sh --check  только диагностика, ничего не меняет
 TMP=/data/local/tmp
-LOG=$TMP/modemguide.log
+LOG=$TMP/f515hilinkwwan.log
 MODEM_MAC=34:4b:50:00:00:00
 FALLBACK_IF=eth1
 FALLBACK_ADDR=192.168.0.178
