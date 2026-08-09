@@ -1,13 +1,13 @@
 #!/system/bin/sh
-# Brings up the USB modem (ZTE MF833R, cdc_ether) as WAN and fixes the phantom-TBOX DNS so
-# Android (and apps/NTP) actually treat it as internet. No WireGuard, no daemon - one shot,
+# Brings up a USB HiLink-style modem (cdc_ether - ZTE MF833R/MF831/MF833U, Huawei в
+# HiLink-режиме и похожие, любой вендор) as WAN and fixes the phantom-TBOX DNS so Android
+# (and apps/NTP) actually treat it as internet. No WireGuard, no daemon - one shot,
 # idempotent, safe to run again. Runs as root (adbd on this build already is root).
 #
 #   modem-up.sh          подъём (меняет состояние по необходимости)
 #   modem-up.sh --check  только диагностика, ничего не меняет
 TMP=/data/local/tmp
 LOG=$TMP/f515hilinkwwan.log
-MODEM_MAC=34:4b:50:00:00:00
 FALLBACK_IF=eth1
 FALLBACK_ADDR=192.168.0.178
 FALLBACK_GW=192.168.0.1
@@ -19,19 +19,66 @@ CHECK_ONLY=0
 
 log() { echo "$(date '+%F %T') modem-up: $*" >> $LOG; }
 
+# Ищем сетевой интерфейс HiLink-модема по драйверу, а не по вендору/MAC/имени интерфейса -
+# HiLink-модемы (любого производителя) отдают себя как USB CDC-Ethernet устройство и
+# привязываются к драйверу cdc_ether (реже rndis_host); ни MAC, ни имя интерфейса, ни
+# vendor ID между моделями/головами не совпадают, а вот тип USB-класса устройства - да.
 modem_iface() {
     for d in /sys/class/net/*; do
-        [ -f "$d/address" ] || continue
-        if [ "$(cat "$d/address" 2>/dev/null)" = "$MODEM_MAC" ]; then
-            basename "$d"
-            return 0
-        fi
+        drv=$(readlink -f "$d/device/driver" 2>/dev/null) || continue
+        dev=$(readlink -f "$d/device" 2>/dev/null)
+        case "$dev" in
+            */usb*/*) ;;   # интерфейс должен висеть на USB, а не быть встроенным
+            *) continue ;;
+        esac
+        case "$(basename "$drv")" in
+            cdc_ether | rndis_host)
+                basename "$d"
+                return 0
+                ;;
+        esac
     done
     [ -d /sys/class/net/$FALLBACK_IF ] && { echo $FALLBACK_IF; return 0; }
     return 1
 }
 
-IF=$(modem_iface) || { log "modem interface not found"; echo "modem interface not found"; exit 1; }
+if ! IF=$(modem_iface); then
+    log "modem interface not found"
+    echo "modem interface not found"
+    echo
+    echo "== сетевые интерфейсы и их драйверы =="
+    for d in /sys/class/net/*; do
+        [ -f "$d/address" ] || continue
+        drv=$(readlink -f "$d/device/driver" 2>/dev/null)
+        dev=$(readlink -f "$d/device" 2>/dev/null)
+        usb=no
+        case "$dev" in */usb*/*) usb=yes ;; esac
+        echo "  $(basename "$d"): mac=$(cat "$d/address" 2>/dev/null) driver=$(basename "${drv:-?}") usb=$usb"
+    done
+    echo
+    echo "== USB-устройства (видны ли вообще на шине) =="
+    found_usb=0
+    for d in /sys/bus/usb/devices/*; do
+        [ -f "$d/idVendor" ] || continue
+        found_usb=1
+        echo "  $(basename "$d"): $(cat "$d/idVendor"):$(cat "$d/idProduct" 2>/dev/null)" \
+             "class=$(cat "$d/bDeviceClass" 2>/dev/null)" \
+             "product=\"$(cat "$d/product" 2>/dev/null)\"" \
+             "manufacturer=\"$(cat "$d/manufacturer" 2>/dev/null)\""
+    done
+    [ "$found_usb" = 1 ] || echo "  (пусто - ни одного USB-устройства с idVendor не найдено)"
+    echo
+    echo "== драйвер cdc_ether/rndis_host загружен? =="
+    lsmod 2>/dev/null | grep -E "cdc_ether|usbnet|rndis_host|cdc_ncm" ||
+        echo "  не найден в lsmod (может быть встроен в ядро статически, а не модулем - тогда это нормально)"
+    echo
+    echo "== последние USB-события в dmesg =="
+    dmesg 2>/dev/null | grep -iE "usb|cdc_ether|rndis|cdc_acm" | tail -20
+    echo
+    echo "если модем в списке USB-устройств есть, но не стал сетевым интерфейсом -"
+    echo "смотри driver= у него в выводе выше и класс USB-устройства (class=)."
+    exit 1
+fi
 log "using interface $IF"
 
 # --- WAN -------------------------------------------------------------------
