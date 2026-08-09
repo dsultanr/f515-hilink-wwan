@@ -97,13 +97,29 @@ do_format() {
         exit 1
     fi
 
+    # После смены таблицы разделов ядро шлёт uevent, и vold ненадолго сам открывает
+    # устройство для проверки (пробует смонтировать) - mkfs может попасть точно в это
+    # окно и получить "Device or resource busy", хотя ни mount, ни lsof в спокойном
+    # состоянии ничего не показывают. Поэтому - несколько попыток с повторным
+    # sm unmount перед каждой, а не одна попытка в лоб.
     echo "форматирую $part в exFAT..."
-    if mkfs.exfat "$part" >>$LOG 2>&1; then
+    ok=0
+    i=0
+    while [ $i -lt 6 ]; do
+        [ -n "$majmin" ] && sm unmount "public:$majmin" >>$LOG 2>&1
+        if mkfs.exfat "$part" >>$LOG 2>&1; then
+            ok=1
+            break
+        fi
+        i=$((i + 1))
+        sleep 2
+    done
+    if [ "$ok" = 1 ]; then
         log "format complete: $part"
         echo "готово: $part отформатирован (exFAT)"
     else
-        echo "mkfs.exfat завершился с ошибкой"
-        log "format: mkfs.exfat failed on $part"
+        echo "mkfs.exfat завершился с ошибкой (после $i попыток)"
+        log "format: mkfs.exfat failed on $part after $i attempts"
         exit 1
     fi
 }
