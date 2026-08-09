@@ -114,13 +114,36 @@ do_format() {
         i=$((i + 1))
         sleep 2
     done
-    if [ "$ok" = 1 ]; then
-        log "format complete: $part"
-        echo "готово: $part отформатирован (exFAT)"
-    else
+    if [ "$ok" != 1 ]; then
         echo "mkfs.exfat завершился с ошибкой (после $i попыток)"
         log "format: mkfs.exfat failed on $part after $i attempts"
         exit 1
+    fi
+    log "format complete: $part"
+
+    # После mkfs том остаётся в состоянии "unmountable", пока vold не пересканирует его
+    # заново - без этого шага новая ФС видна ядру и blkid, но недоступна как /storage/...
+    # и приложениям (например видеорегистратору) не видна, пока кто-то не смонтирует
+    # руками через sm mount.
+    echo "монтирую..."
+    mounted=0
+    i=0
+    while [ $i -lt 5 ]; do
+        if [ -n "$majmin" ] && sm mount "public:$majmin" >>$LOG 2>&1; then
+            sleep 1
+            case "$(sm list-volumes 2>/dev/null)" in
+                *"public:$majmin mounted"*) mounted=1; break ;;
+            esac
+        fi
+        i=$((i + 1))
+        sleep 1
+    done
+    if [ "$mounted" = 1 ]; then
+        log "mount complete: public:$majmin"
+        echo "готово: $part отформатирован и смонтирован (exFAT)"
+    else
+        log "format ok but mount failed: public:$majmin"
+        echo "отформатирован, но не примонтировался автоматически - переподключите модем/карту"
     fi
 }
 
