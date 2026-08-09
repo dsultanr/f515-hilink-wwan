@@ -14,6 +14,7 @@ public class Keeper {
 
     static final String TMP = "/data/local/tmp";
     static final String SCRIPT = TMP + "/modem-up.sh";
+    static final String FORMAT_SCRIPT = TMP + "/format-sdcard.sh";
     static final String ADB_HOST = "127.0.0.1";
     static final int ADB_PORT = 5555;
 
@@ -32,9 +33,30 @@ public class Keeper {
                     sb.append("WARNING: adbd is not root, this will fail\n");
                 }
 
-                deployScript(ctx, adb, sb);
+                deployScript(ctx, adb, "modem-up.sh", SCRIPT, sb);
 
                 String cmd = "sh " + SCRIPT + " " + args + " 2>&1";
+                sb.append("--- ").append(cmd).append(" ---\n");
+                sb.append(adb.shell(cmd));
+            } catch (Exception e) {
+                sb.append("failed: ").append(e).append('\n');
+            } finally {
+                if (adb != null) adb.close();
+            }
+            return sb.toString();
+        }
+    }
+
+    /** Deploys format-sdcard.sh and runs it with the given arguments ("--list" or "--format=sdX"). */
+    public static String runFormat(Context ctx, String args) {
+        synchronized (LOCK) {
+            StringBuilder sb = new StringBuilder();
+            AdbClient adb = null;
+            try {
+                adb = connect(ctx, 15000);
+                deployScript(ctx, adb, "format-sdcard.sh", FORMAT_SCRIPT, sb);
+
+                String cmd = "sh " + FORMAT_SCRIPT + " " + args + " 2>&1";
                 sb.append("--- ").append(cmd).append(" ---\n");
                 sb.append(adb.shell(cmd));
             } catch (Exception e) {
@@ -50,12 +72,12 @@ public class Keeper {
         return new AdbClient(ADB_HOST, ADB_PORT, asset(ctx, "adbkey"), asset(ctx, "adbkey.pub"), timeoutMs);
     }
 
-    private static void deployScript(Context ctx, AdbClient adb, StringBuilder sb) throws Exception {
-        byte[] data = asset(ctx, "modem-up.sh");
+    private static void deployScript(Context ctx, AdbClient adb, String assetName, String remotePath, StringBuilder sb) throws Exception {
+        byte[] data = asset(ctx, assetName);
         String b64 = android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP);
-        String out = adb.shell("echo '" + b64 + "' | base64 -d > " + SCRIPT +
-                " && chmod 755 " + SCRIPT + " && echo ok").trim();
-        sb.append("deploy modem-up.sh: ").append(out).append('\n');
+        String out = adb.shell("echo '" + b64 + "' | base64 -d > " + remotePath +
+                " && chmod 755 " + remotePath + " && echo ok").trim();
+        sb.append("deploy ").append(assetName).append(": ").append(out).append('\n');
     }
 
     private static byte[] asset(Context ctx, String name) throws Exception {
